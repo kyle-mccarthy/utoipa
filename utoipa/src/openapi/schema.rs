@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::encoding::Encoding;
 use super::RefOr;
 use super::{builder, security::SecurityScheme, set_value, xml::Xml, Deprecated, Response};
 use crate::ToResponse;
@@ -643,6 +644,10 @@ builder! {
         /// `0` will have same effect as omitting the attribute.
         #[serde(skip_serializing_if = "Option::is_none")]
         pub min_properties: Option<usize>,
+
+        /// Specify the encoding of properties within an ['Object'].
+        #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+        pub encoding: BTreeMap<String, Encoding>,
     }
 }
 
@@ -823,6 +828,15 @@ impl ObjectBuilder {
     /// Set or change minimum number of properties the [`Object`] can hold.
     pub fn min_properties(mut self, min_properties: Option<usize>) -> Self {
         set_value!(self min_properties min_properties)
+    }
+
+    pub fn encoding<S: Into<String>, E: Into<Encoding>>(
+        mut self,
+        property: S,
+        encoding: E,
+    ) -> Self {
+        self.encoding.insert(property.into(), encoding.into());
+        self
     }
 
     to_array_builder!();
@@ -1117,7 +1131,7 @@ mod tests {
     use serde_json::{json, Value};
 
     use super::*;
-    use crate::openapi::*;
+    use crate::openapi::{encoding::EncodingBuilder, *};
 
     #[test]
     fn create_schema_serializes_json() -> Result<(), serde_json::Error> {
@@ -1600,5 +1614,37 @@ mod tests {
         println!("{json_de_str}");
 
         assert_eq!(json_str, json_de_str);
+    }
+
+    #[test]
+    fn test_object_with_encoding() {
+        let ref_or_schema = ObjectBuilder::new()
+            .property(
+                "file",
+                ObjectBuilder::new().format(Some(SchemaFormat::KnownFormat(KnownFormat::Binary))),
+            )
+            .encoding(
+                "file",
+                EncodingBuilder::new().content_type(Some("image/png")),
+            )
+            .build();
+
+        assert_eq!(
+            serde_json::to_string(&ref_or_schema).unwrap(),
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "file": {
+                        "type": "object",
+                        "format": "binary"
+                    }
+                },
+                "encoding": {
+                    "file": {
+                        "contentType": "image/png"
+                    }
+                }
+            })
+        );
     }
 }
